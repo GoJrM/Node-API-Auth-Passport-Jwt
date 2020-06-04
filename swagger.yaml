@@ -1,0 +1,271 @@
+swagger: "2.0"
+info:
+  title: "API Authentication/authorization with Node/Express/Passport"
+  version: "1.0.0"
+  description: |
+    Step by step authentication and authorization for a Node/Express API. 
+    I will use a passport localStrategy and sign Access and refresh tokens with jsonwebtoken.
+    You must first create a user (/auth/signup endpoint to get your authorization).
+  contact:
+    name: GoJrM 
+host: "localhost:5000"
+basePath: "/api/v1"
+schemes:
+- "http"
+- "https"
+consumes:
+- "application/json"
+produces: 
+- "application/json"
+paths:
+  /auth/signup:
+    post:
+      summary: "Register users"
+      description: "Create a new User"
+      operationId: "userRegistration"
+      consumes:
+        - "application/json"
+        - "application/x-form-urlencoded"
+      tags:
+        - "Auth"
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "full registration required"          
+          schema:
+            $ref: "#/definitions/User"                                                       
+      produces:
+      - "application/json"
+      responses:
+        200:
+          description: "signup successfull"
+          schema:
+            type: object
+            properties:
+              message: 
+                type: "string"
+  /auth/login:
+    post:
+      summary: "authenticate users"
+      description: "authenticate users and return accessToken/refreshToken for authorization"
+      operationId: "userLogIn"
+      consumes:
+        - "application/json"
+        - "application/x-form-urlencoded"
+      tags:
+        - "Auth"
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "users email and password"
+          schema:
+            type: object
+            required:
+            - email
+            - password            
+            properties: 
+              password:
+                type: "string"
+                minimum: 6
+              email:
+                type: "string"
+                minimum: 6
+      responses:
+        200:
+          description: "User is authenticated"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+              accessToken:
+                type: string
+              expiresIn:
+                type: number
+              created: 
+                type: string
+                format: date-time
+              refreshToken:
+                type: string
+              timestamp: 
+                type: string
+  /auth/logout:
+    get:  
+      summary: "logout users"
+      description: "Log the user out and delete the refreshToken"      
+      operationId: "userLogOut"
+      tags:
+        - "Auth"
+      security: 
+        - Bearer: []
+      responses:
+        200:
+          description: "User successfully logged out"
+          schema:
+            type: object
+            properties:  
+              message:
+                type: string
+  /auth/token:
+    post:
+      summary: "Grants user with a new accesToken"
+      desciption: |
+        Pass your refresh token in body.
+        If it passes the validation, You're granted with a new accesToken.
+        operationId: "authToken"
+      tags:
+        - "Auth"
+      parameters:
+      - in: "body"
+        name: "body"
+        description: "user refreshToken"
+        schema:
+          type: object
+          required: 
+          - refreshToken
+          properties:
+            refreshToken: 
+              type: string
+      responses:
+        200:
+          description: "Success"
+          schema:
+            type: object
+            properties:
+              accessToken:
+                type: string
+              expiresIn:
+                type: number
+              created:
+                type: string
+                format: date-time
+              timestamp:
+                type: string                  
+
+  /user:
+    get:
+      summary: "User Profile"
+      description: "Retrieve user informations" 
+      operationId: "getUserProfile"     
+      tags:
+        - "User"
+      security: 
+        - Bearer: []
+      responses:  
+        200: 
+          description: "operation was successfull"
+          schema:            
+            $ref: "#/definitions/UserProfile"                               
+    put:  
+      summary: "Update Profile"
+      description: "Update user infos with new values"
+      operationId: "editUserProfile"
+      tags:
+        - "User"
+      security: 
+        - Bearer: []
+      parameters:
+        - in: "body"
+          name: "body"
+          desciption: "update user profile"
+          schema:            
+            $ref: "#/definitions/UserProfile"
+      response:
+        200:
+          description: "user profile successfully edited"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+              timestamp:
+                type: string
+    delete:
+      summary: "Delete a user Account"
+      description: "Delete the entire user Account"
+      operationId: "deleteUserProfile"
+      tags:
+        - "User"
+      security: 
+        - Bearer: []
+      responses:
+        200:
+          desciption: "User deleted successfully"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+              timestamp:
+                type: string
+  
+securityDefinitions:
+  Bearer:
+    type: "apiKey"
+    name: "authorization"
+    in: "header"
+      
+definitions:
+
+  User:
+    type: object
+    required: 
+      - email
+      - password
+      - adress
+      - city
+      - zipCode
+      - enterprise
+    properties:
+      email: 
+        type: string
+        uniqueItems: true
+        minimum: 6
+      password:  
+        type: string
+        minimum: 6
+      firstName:
+        type: string
+      lastName:
+        type: string
+      enterprise:
+        type: string
+      role: 
+        type: string 
+        enum: ["Client", "Employe", "Admin"]
+        default: "Client"
+      adress:
+        type: string
+      city: 
+        type: string
+      zipCode:
+        type: "number"
+      phone:
+        type: string   
+
+  UserProfile:
+    type: object
+    required:
+    - userId 
+    properties:
+      userId: 
+        type: string
+      email:
+        type: string
+      firstName:
+        type: string
+      lastName:
+        type: string
+      adress:
+        type: string
+      city: 
+        type: string
+      zipCode:
+        type: "number"
+      phone:
+        type: string 
+          
+  Users:
+    type: array 
+    items:
+      $ref: "#/definitions/UserProfile" 
