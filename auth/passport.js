@@ -12,19 +12,25 @@ exports = passport.use('signup', new localStrategy({
     usernameField: 'email',
     passwordField: 'password',
     passReqToCallback: true
-}, async (req,email, password, done) => {
-    try {        
-        const userFields = { 
-        email,
-        password        
-        };
-        const user = await User.create(userFields);
-        console.log("user successfully created");
-        return done (null, user);
-    } catch (error){    
-        done (error);
-    }
-}));
+}, async (req, email, password, done) => {
+        try {        
+            const userInputs = { 
+            email,
+            password        
+            };
+            const userExists = await User.findOne( { email: email } )
+            if (userExists) {        
+                return done (null, false, { message: 'The email already exists'});
+            } else {
+                const user = await User.create(userInputs);
+                console.log("user successfully created");
+                return done (null, user, { message : 'User successfully created'});
+            }            
+        } catch (err) { 
+            console.log(err)   
+            return done (err);
+        }
+    }));
 
 // Login
 exports = passport.use ('login', new localStrategy({
@@ -32,14 +38,12 @@ exports = passport.use ('login', new localStrategy({
     passwordField:'password',
     passReqToCallback: true
 }, async (req,email, password, done) => {
-    try{
-        // Find the user in db according to user input
+    try{        
         const user = await User.findOne({ email });
         if (!user){
             console.log('user not found');
             return done (null, false);
-        }        
-        //validate password and make sure if it maches the one in db            
+        }                        
         const validate = await user.comparePassword(password);
         if (!validate){
         return done(null, false);
@@ -55,12 +59,15 @@ const opts = {}
 opts.jwtFromRequest = ExtractJwt.fromAuthHeaderAsBearerToken();
 opts.secretOrKey = secret;
 
-exports = passport.use('jwt', new JwtStrategy (opts, async (token, done) => { 
+exports = passport.use('jwt', new JwtStrategy (opts, async (payload, done) => { 
     try {
-    console.log('User authenticated')
-    return done(null,token);
-    
-    } catch (error) {
-        done(error);
+        const user = await  User.findById({ _id : payload._id})
+        if (!user){
+            return done(null, false)
+        } else {
+            return done(null,payload);
+        }    
+    } catch (err) {
+        return done(err, false);
     }
 }));

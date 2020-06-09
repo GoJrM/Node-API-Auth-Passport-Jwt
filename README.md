@@ -249,19 +249,25 @@ exports = passport.use('signup', new localStrategy({
     usernameField: 'email',
     passwordField: 'password',
     passReqToCallback: true
-}, async (req,email, password, done) => {
-    try {        
-        const userFields = { 
-        email,
-        password        
-        };
-        const user = await User.create(userFields);
-        console.log("user successfully created");
-        return done (null, user);
-    } catch (error){    
-        done (error);
-    }
-}));
+}, async (req, email, password, done) => {
+        try {        
+            const userInputs = { 
+            email,
+            password        
+            };
+            const userExists = await User.findOne( { email: email } )
+            if (userExists) {        
+                return done (null, false, { message: 'The email already exists'});
+            } else {
+                const user = await User.create(userInputs);
+                console.log("user successfully created");
+                return done (null, user, { message : 'User successfully created'});
+            }            
+        } catch (err) { 
+            console.log(err)   
+            return done (err);
+        }
+    }));
 
 ```
 I first require the jwt and passport dependancy needed to set my strategies up.
@@ -273,28 +279,44 @@ This previous exemple illustrate the `signup strategy`.
 ```javascript
 
 // Login
-exports = passport.use ('login', new localStrategy({
-    usernameField:'email',
-    passwordField:'password',
-    passReqToCallback: true
-}, async (req,email, password, done) => {
-    try{
-        // Find the user in db according to user input
-        const user = await User.findOne({ email });
-        if (!user){
-            console.log('user not found');
-            return done (null, false);
-        }        
-        //validate password and make sure if it maches the one in db            
-        const validate = await user.comparePassword(password);
-        if (!validate){
-        return done(null, false);
+exports.userLogin = async (req, res, next) => {
+    passport.authenticate('login', async (err, user) => {
+        try {
+            if (err || !user){
+                console.log(err);
+                return res.status(423).json({
+                    error: 'server error',
+                    message: 'Oups the password or the email might be wrong'
+                })
+            }
+            await req.login(user, { session : false } , async (error) => {
+                if (error) {
+                    return next (error)
+                } else {
+                    const body = { _id: user._id, email : user.email };                                    
+                    const token = await jwt.sign(body, secret,{expiresIn: token_Exp});
+                    const expirationTime = Math.floor(Date.now() / 1000) + token_Exp;
+                    const refreshToken = jwt.sign(body, refreshSecret,{expiresIn: 30});
+                    const filter = {_id: user._id};
+                    const update = {refreshToken: refreshToken};                  
+                    const updated = await User.findOneAndUpdate(filter, update, { new: true });
+                    if (updated) { 
+                        return res.status(200).json({
+                            message : 'User authenticated',
+                            accesToken: token,
+                            expiresIn:  expirationTime,
+                            created: new Date(),
+                            refreshToken : refreshToken
+                        })
+                    }
+                        
+                }                
+            });
+        } catch (error) {
+            return next (error);
         }
-        return done (null,user);
-    } catch (error) {
-        done (error);
-    }
-}));
+    }) (req, res, next);
+}
 
 ```
 Same logic for the login but we first check if the (unique) email from the user input already exists in db and then call the comparepassword() methods we created earlier.
@@ -306,13 +328,16 @@ const opts = {}
 opts.jwtFromRequest = ExtractJwt.fromAuthHeaderAsBearerToken();
 opts.secretOrKey = secret;
 
-exports = passport.use('jwt', new JwtStrategy (opts, async (token, done) => { 
+exports = passport.use('jwt', new JwtStrategy (opts, async (payload, done) => { 
     try {
-    console.log('User authenticated')
-    return done(null,token);
-    
-    } catch (error) {
-        done(error);
+        const user = await  User.findById({ _id : payload._id})
+        if (!user){
+            return done(null, false)
+        } else {
+            return done(null,payload);
+        }    
+    } catch (err) {
+        return done(err, false);
     }
 }));
 
@@ -369,38 +394,41 @@ const secret = process.env.SECRET;
 const refreshSecret = process.env.REFRESH_SECRET;
 const jwt = require('jsonwebtoken');
 
-
-//sign Up
-exports.userSignUp = (req, res, next)=> {
-    res.status(200).json({
-        message : 'user created successfully',
-        user: req.user            
-    });   
-}
+const token_Exp= 200;
 
 //Login
 exports.userLogin = async (req, res, next) => {
     passport.authenticate('login', async (err, user) => {
         try {
             if (err || !user){
-                const error = new Error (passport.message)
-                return next (error);
-            }
-            req.login(user, {session : false} , async (error) => {
-                if (error) return next (error)
-                //never store sensitive data in the token, so I choose only email and id here
-                const body = {_id: user._id, email : user.email};
-                //sign the JWT token and populate the payload with user email/id
-                const token = jwt.sign(body, secret,{expiresIn: 200});
-                const refreshToken = jwt.sign(body, refreshSecret,{expiresIn: 15});
-                const filter = {_id: user._id};
-                const update = {refreshToken: refreshToken};
-
-                await User.findOneAndUpdate(filter, update, {new: true});
-                return res.status(200).json({
-                    accestoken: token,
-                    refreshToken : refreshToken
+                console.log(err);
+                return res.status(500).json({
+                    error: 'server error',
+                    message: 'Oups the password or the email might be wrong'
                 })
+            }
+            await req.login(user, { session : false } , async (error) => {
+                if (error) {
+                    return next (error)
+                } else {
+                    const body = { _id: user._id, email : user.email };                                    
+                    const token = await jwt.sign(body, secret,{expiresIn: token_Exp});
+                    const expirationTime = Math.floor(Date.now() / 1000) + token_Exp;
+                    const refreshToken = jwt.sign(body, refreshSecret,{expiresIn: 30});
+                    const filter = {_id: user._id};
+                    const update = {refreshToken: refreshToken};                  
+                    const updated = await User.findOneAndUpdate(filter, update, { new: true });
+                    if (updated) { 
+                        return res.status(200).json({
+                            message : 'User authenticated',
+                            accesToken: token,
+                            expiresIn:  expirationTime,
+                            created: new Date(),
+                            refreshToken : refreshToken
+                        })
+                    }
+                        
+                }                
             });
         } catch (error) {
             return next (error);
@@ -424,35 +452,37 @@ exports.tokenController = async (req, res)=> {
         return res.sendStatus(401);
     }
     else {
-        await User.findOne({refreshToken: userToken}, async (err, doc )=> {
-            try {
-                if (err){
-                    console.log(err)
-                    return res.sendStatus(403);
-                }
-                else if (!doc) {
-                    console.log('refreshToken doesn\'t exists')
-                    return res.sendStatus(403);
-                } else {
-                    const refreshtoken = doc.refreshToken                
-                    jwt.verify (refreshtoken, refreshSecret, async (er, user) => {
-                        if (er) {
-                            await User.findOneAndUpdate({refreshToken: userToken}, {$unset: {refreshToken: ""}},{new: true}) 
-                  
-                            return res.status(401).json({
-                                error : "Your refresh token has expired, please sign in again" 
-                            });                                                                        
-                        } else {
-                            const body = {_id: user._id, email : user.email}
-                            const accesToken = generateAccesToken(body)
-                            res.json({accesToken: accesToken})
-                        }                                      
-                    })  
-                }                
-            } catch (error) {
-                console.log (error);
-            }
-        })            
+        const user = await User.findOne({refreshToken: userToken})
+        try {
+            if (!user){
+                return res.sendStatus(403).json({
+                    message : 'User not found'
+                });
+            } else {
+                const refreshtoken = user.refreshToken                
+                await jwt.verify (refreshtoken, refreshSecret, async (err, user) => {
+                    if (err) {
+                        await User.findOneAndUpdate({refreshToken: userToken}, {$unset: {refreshToken: ""}},{new: true}) 
+                
+                        return res.status(401).json({
+                            error : "Your refresh token has expired, please sign in again" 
+                        });                                                                        
+                    } else {
+                        const body = {_id: user._id, email : user.email}                        
+                        const expires_In = Math.floor(Date.now() / 1000) + token_Exp;                      
+                        const accesToken = await generateAccesToken(body , token_Exp)
+                        return res.status(200).json({
+                            accesToken: accesToken,
+                            expires_In: expires_In,
+                            created : new Date()
+                        })
+                    }                                      
+                })  
+            }                
+        } catch (error) {
+            console.log (error);
+        }
+                   
     }     
 }
 
@@ -467,24 +497,33 @@ If the refreshToken expired, I erase it from the database and the user will have
 
 //Logout 
 exports.logUserOut = async (req, res) => {
-    let userID = ""
     const authHeader = req.headers['authorization']
-    const token = authHeader.split(' ')[1]
-    jwt.verify(token, secret, async (err, user)=>{
-        console.log(user)
-        userID = user._id
-    })
-    await User.findByIdAndUpdate({_id: userID}, {$unset:{refreshToken: ""}},{new: true}, (err, doc) => {
-        if(err){
-            return res.sendStatus(500)
-        }
-        else{
-            return res.status(200).json({
-                message: "logout Complete",
-            })
-        }
-    })    
-} 
+    const accesToken = authHeader.split(' ')[1]
+    try {
+        await jwt.verify(accesToken, secret, async (error, user) => {
+            if (error) {
+                return res.status(401).json({              
+                    message : 'AccessToken expired'
+                })
+            } else {
+                const userId = user._id
+                await User.findByIdAndUpdate({_id: userId}, {$unset:{refresh_token: ""}}, async (er, doc) => {
+                    if (doc){
+                        console.log(doc)
+                        return res.status(200).json({                    
+                            message : 'User successfully logged out'
+                        })
+                    }
+                })
+            }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json ({          
+            error: 'Server Error'
+        })
+    }
+};
 
 ```
 The `userLogout` controller is pretty easy to understand, it retrieve the accesToken by splitting the `authorization header` from the request and unset the user's refreshToken from the db.
@@ -550,18 +589,18 @@ You can see really easily what what the server expects as request and what desir
 For te purpose of this topic I will use only the attributes we need (email, password, access and refreshTokens). But I showed an exemple of what a basic **/user** endpoint can look like.
 
 **auth/signup**
-![postam-signup](https://user-images.githubusercontent.com/56259327/80973801-24758280-8e20-11ea-8213-e3048d7a1e76.png)
+![postman-signup](https://user-images.githubusercontent.com/56259327/84166692-88214a00-aa75-11ea-9cd1-d5574860feb3.png)
 
 **auth/login**
-![postman-login](https://user-images.githubusercontent.com/56259327/80984109-b89a1680-8e2d-11ea-917e-9acddd5486c2.png)
+![postman-login](https://user-images.githubusercontent.com/56259327/84166577-60ca7d00-aa75-11ea-8663-fefdc85199b3.png)
 *You just need the email/password to get access, you're granted with your access/RefreshToken.*
 
 **auth/token**
-![postman-token](https://user-images.githubusercontent.com/56259327/80973960-5a1a6b80-8e20-11ea-8809-f6eae1f276ff.png)
+![postman-token](https://user-images.githubusercontent.com/56259327/84166727-966f6600-aa75-11ea-941e-6feee04315f5.png)
 All you have to do is pass the refreshToken in the request body to be granted with a new accessToken.
 
 **auth/logout**
-![postman-logout](https://user-images.githubusercontent.com/56259327/80973997-6b637800-8e20-11ea-888a-4edc84a6ca09.png)
+![postman-logout](https://user-images.githubusercontent.com/56259327/84166770-a5eeaf00-aa75-11ea-9f22-3404df0f8a63.png)
 Here you need to pass your accesToken in the authorization field as bearer Token. It is necessary for every protected route.
 
 ### Contribute
