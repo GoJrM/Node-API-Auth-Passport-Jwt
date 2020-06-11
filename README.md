@@ -279,44 +279,26 @@ This previous exemple illustrate the `signup strategy`.
 ```javascript
 
 // Login
-exports.userLogin = async (req, res, next) => {
-    passport.authenticate('login', async (err, user) => {
-        try {
-            if (err || !user){
-                console.log(err);
-                return res.status(423).json({
-                    error: 'server error',
-                    message: 'Oups the password or the email might be wrong'
-                })
-            }
-            await req.login(user, { session : false } , async (error) => {
-                if (error) {
-                    return next (error)
-                } else {
-                    const body = { _id: user._id, email : user.email };                                    
-                    const token = await jwt.sign(body, secret,{expiresIn: token_Exp});
-                    const expirationTime = Math.floor(Date.now() / 1000) + token_Exp;
-                    const refreshToken = jwt.sign(body, refreshSecret,{expiresIn: 30});
-                    const filter = {_id: user._id};
-                    const update = {refreshToken: refreshToken};                  
-                    const updated = await User.findOneAndUpdate(filter, update, { new: true });
-                    if (updated) { 
-                        return res.status(200).json({
-                            message : 'User authenticated',
-                            accesToken: token,
-                            expiresIn:  expirationTime,
-                            created: new Date(),
-                            refreshToken : refreshToken
-                        })
-                    }
-                        
-                }                
-            });
-        } catch (error) {
-            return next (error);
+exports = passport.use ('login', new localStrategy({
+    usernameField:'email',
+    passwordField:'password',
+    passReqToCallback: true
+}, async (req,email, password, done) => {
+    try{        
+        const user = await User.findOne({ email });
+        if (!user){
+            console.log('user not found');
+            return done (null, false);
+        }                        
+        const validate = await user.comparePassword(password);
+        if (!validate){
+        return done(null, false);
         }
-    }) (req, res, next);
-}
+        return done (null,user);
+    } catch (error) {
+        done (error);
+    }
+}));
 
 ```
 Same logic for the login but we first check if the (unique) email from the user input already exists in db and then call the comparepassword() methods we created earlier.
